@@ -166,15 +166,21 @@ def hour_points(points, day_start):
 
 
 def comparable_curve(comp):
-    """(day dict, prepeak, rolling?, console?) or None if unusable."""
+    """(day dict, prepeak or None, rolling?, console?) or None if unusable.
+
+    A peer needs a complete 24-hour release day. A peer whose pre-day
+    history is too sparse for a peak (fewer than 12 hourly points) still
+    contributes to the hour-1 anchor and the spread, just not to the
+    pre-launch-peak anchor, so it comes back with prepeak None instead of
+    being dropped outright."""
     try:
         ds = parse_time(comp["day_start"])
     except (KeyError, TypeError, ValueError):
         return None
     day, pre = hour_points(comp.get("hourly"), ds)
-    if len(day) != 24 or len(pre) < 12:
+    if len(day) != 24:
         return None
-    return day, max(pre), is_rolling(comp.get("unlock")), console_only(comp.get("platforms", ""))
+    return day, (max(pre) if len(pre) >= 12 else None), is_rolling(comp.get("unlock")), console_only(comp.get("platforms", ""))
 
 
 def case_prepeak(case):
@@ -233,16 +239,16 @@ def forecast_case(case):
     out = []
     for h in hours:
         lr = [math.log(day[h] / day[1]) for day, _, _, _ in pool]
-        lp = [math.log(day[h] / pp) for day, pp, _, _ in pool]
+        lp = [math.log(day[h] / pp) for day, pp, _, _ in pool if pp is not None]
         lr_c = [math.log(day[h] / day[1]) for day, _, _, co in pool if co]
-        lp_c = [math.log(day[h] / pp) for day, pp, _, co in pool if co]
+        lp_c = [math.log(day[h] / pp) for day, pp, _, co in pool if co and pp is not None]
         med_lr = median(lr_c) if len(lr_c) >= MIN_PEERS else median(lr)
-        med_lp = median(lp_c) if len(lp_c) >= MIN_PEERS else median(lp)
         mu_a = (1 - W_CONSOLE) * median(lr) + W_CONSOLE * med_lr
-        mu_b = (1 - W_CONSOLE) * median(lp) + W_CONSOLE * med_lp
-        if log_pre is None:
+        if log_pre is None or not lp:
             mu = log_p1 + mu_a
         else:
+            med_lp = median(lp_c) if len(lp_c) >= MIN_PEERS else median(lp)
+            mu_b = (1 - W_CONSOLE) * median(lp) + W_CONSOLE * med_lp
             mu = (1 - W_PRE) * (log_p1 + mu_a) + W_PRE * (log_pre + mu_b)
         sig = pstdev(lr) * SPREAD_MULT
         if sig <= 0:

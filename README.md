@@ -45,9 +45,11 @@ PS5 / Xbox / Switch only, no PC) and 25% all rolling-midnight peers.
 "midnight local" or "rolling"). Global-unlock launches are excluded: their
 hour-1 print is near zero (unlock at mid-day UTC), which makes their ratios
 meaningless for a rolling launch — including them lifts the median curve
-and wrecks the forecast. A peer needs a complete 24-hour release day and a
-usable pre-day peak; the GTA VI category's own pre-launch history entry is
-excluded automatically (it has no release day).
+and wrecks the forecast. A peer needs a complete 24-hour release day; a
+peer whose pre-day history is too sparse to give a peak still contributes
+to the hour-1 anchor and the spread, just not to the pre-launch-peak
+anchor. The GTA VI category's own pre-launch history entry is excluded
+automatically (it has no release day).
 
 **Spread.** `sigma_h = 0.85 ×` the cross-peer population standard deviation
 of `ln(v_h / v_1)`, so the 90% interval is the peers' own disagreement
