@@ -84,6 +84,11 @@ def median(xs):
     return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
 
 
+def _is_number(v):
+    """True for a real JSON number (a bool is not a number here)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 def pstdev(xs):
     m = sum(xs) / len(xs)
     return math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
@@ -95,7 +100,14 @@ def is_rolling(unlock):
 
 
 def console_only(platforms):
-    s = platforms.lower() if isinstance(platforms, str) else " ".join(platforms).lower()
+    # A peer whose platform field is missing or malformed is not
+    # console-only; never let one bad field poison the whole forecast.
+    if isinstance(platforms, str):
+        s = platforms.lower()
+    elif isinstance(platforms, (list, tuple)):
+        s = " ".join(str(x) for x in platforms).lower()
+    else:
+        s = ""
     return ("pc" not in s and "steam" not in s and "windows" not in s
             and "xbox" not in s and "stadia" not in s)
 
@@ -154,9 +166,12 @@ def hour_points(points, day_start):
         try:
             d = (parse_time(p["from"]) - day_start).total_seconds() / 3600
             v = p.get("viewers")
+            # A non-numeric viewers value skips this point. The check used
+            # to sit outside the try, so one malformed point raised and
+            # poisoned the whole peer (and with it the forecast).
+            if not _is_number(v) or v <= 0:
+                continue
         except (KeyError, TypeError, ValueError):
-            continue
-        if v is None or v <= 0:
             continue
         if 0 <= d < 24 and float(d).is_integer():
             day[int(d) + 1] = v
@@ -194,19 +209,21 @@ def case_prepeak(case):
         try:
             d = (parse_time(p["from"]) - ds).total_seconds() / 3600
             v = p.get("viewers")
+            if not _is_number(v) or v <= 0:
+                continue
         except (KeyError, TypeError, ValueError):
             continue
-        if v is not None and v > 0 and -24 <= d < 0:
+        if -24 <= d < 0:
             vals.append(v)
     return max(vals) if vals else None
 
 
 def hour1_print(case):
     for k in case.get("known") or []:
-        if k.get("hour") == 1 and k.get("viewers"):
+        if k.get("hour") == 1 and _is_number(k.get("viewers")) and k["viewers"]:
             return max(1, k["viewers"])
     hh = case.get("history_hourly") or []
-    if hh and hh[-1].get("viewers"):
+    if hh and _is_number(hh[-1].get("viewers")) and hh[-1]["viewers"]:
         return max(1, hh[-1]["viewers"])
     return 1
 
@@ -217,6 +234,9 @@ def baseline_quantiles(p1, h, zs):
 
 def forecast_case(case):
     levels = case.get("levels") or LEVELS
+    if (not isinstance(levels, (list, tuple)) or not levels
+            or not all(_is_number(t) and 0 < t < 1 for t in levels)):
+        levels = LEVELS
     zs = z_values(levels)
     forecast_rows = case.get("forecast") or [{"hour": h} for h in range(2, 25)]
     hours = [row["hour"] for row in forecast_rows]
@@ -224,7 +244,12 @@ def forecast_case(case):
 
     curves = []
     for comp in case.get("comparables") or []:
-        c = comparable_curve(comp)
+        # One malformed comparable must not poison the whole forecast:
+        # skip it and use the remaining peers.
+        try:
+            c = comparable_curve(comp)
+        except Exception:
+            continue
         if c is not None:
             curves.append(c)
     rolling = [c for c in curves if c[2]]
